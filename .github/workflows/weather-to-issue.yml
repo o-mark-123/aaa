@@ -1,0 +1,52 @@
+name: 推送深圳天气到Issue
+
+on:
+  schedule:
+    # 每天UTC时间14点30触发，即北京时间22点30。可根据需要调整。
+    - cron: '30 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  weather:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检查出仓库
+        uses: actions/checkout@v4
+
+      - name: 获取深圳明天天气基础信息
+        id: weather
+        run: |
+          DATE=$(date -d '+1 day' '+%Y-%m-%d')
+          API_KEY="${{ secrets.WEATHER_API_KEY }}"
+          CITYID="101280601" # 深圳的和风天气城市ID
+          # 获取明天的天气
+          WEATHER_JSON=$(curl -s "https://devapi.qweather.com/v7/weather/3d?location=$CITYID&key=$API_KEY")
+          DAY_WEATHER=$(echo $WEATHER_JSON | jq -r ".daily[1]")
+          TEMP_MIN=$(echo $DAY_WEATHER | jq -r ".tempMin")
+          TEMP_MAX=$(echo $DAY_WEATHER | jq -r ".tempMax")
+          TEXT_DAY=$(echo $DAY_WEATHER | jq -r ".textDay")
+
+          # 简单穿衣建议逻辑
+          if [ "$TEMP_MAX" -ge 28 ]; then
+            SUGGESTION="建议穿短袖，注意防晒，多喝水。"
+          elif [ "$TEMP_MIN" -le 20 ]; then
+            SUGGESTION="建议携带薄外套，早晚注意保暖。"
+          else
+            SUGGESTION="穿着舒适透气为主。"
+          fi
+
+          # 留作后续输出
+          echo "DATE=$DATE" >> $GITHUB_OUTPUT
+          echo "TEMP=$TEMP_MIN~$TEMP_MAX℃" >> $GITHUB_OUTPUT
+          echo "TEXT=$TEXT_DAY" >> $GITHUB_OUTPUT
+          echo "SUGGEST=$SUGGESTION" >> $GITHUB_OUTPUT
+
+      - name: 追加天气信息到Issue
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          issue-number: 1
+          body: |
+            ${{ steps.weather.outputs.DATE }} 深圳天气简报
+            - 气温：${{ steps.weather.outputs.TEMP }}
+            - 天气状况：${{ steps.weather.outputs.TEXT }}
+            - 穿衣建议：${{ steps.weather.outputs.SUGGEST }}
